@@ -57,7 +57,7 @@ import plotly.express as px, plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import sqlite3
 from datetime import datetime, timedelta, date
-import warnings, os, random, io, hashlib, base64, gc, tempfile, pathlib
+import warnings, os, random, io, hashlib, base64, gc as _gc_stdlib, tempfile, pathlib
 warnings.filterwarnings("ignore")
 
 # ── Lecture Excel robuste pour fichiers volumineux (>50 Mo) ──────────────────
@@ -80,7 +80,7 @@ def _read_excel_robust(file_obj, sheet_name=0, dtype=None):
                 tmp.write(raw)
                 tmp_path = tmp.name
             del raw  # libérer immédiatement
-            gc.collect()
+            _gc_stdlib.collect()
         else:
             tmp_path = str(file_obj)
         try:
@@ -95,7 +95,7 @@ def _read_excel_robust(file_obj, sheet_name=0, dtype=None):
             if hasattr(file_obj, "read"):
                 try: os.unlink(tmp_path)
                 except Exception: pass
-        gc.collect()
+        _gc_stdlib.collect()
         return df
     except Exception as _e:
         raise RuntimeError(f"Impossible de lire le fichier Excel : {_e}") from _e
@@ -3696,11 +3696,11 @@ elif "Accueil" in nav:
                                 df_pf_raw = _read_excel_robust(pf_file, sheet_name="Sheet 1")
                             except Exception:
                                 df_pf_raw = _read_excel_robust(pf_file, sheet_name=0)
-                            gc.collect()
+                            _gc_stdlib.collect()
 
                         with st.spinner("⏳ Préparation et calcul des indicateurs…"):
                             df_pf_prep = preparer_portefeuille(df_pf_raw)
-                            del df_pf_raw; gc.collect()
+                            del df_pf_raw; _gc_stdlib.collect()
 
                             meta_info = {
                                 "filename": getattr(pf_file, "name", "portefeuille.xlsx"),
@@ -3714,7 +3714,7 @@ elif "Accueil" in nav:
                             else:
                                 _pf_old = _load_base(_PF_CACHE)
                                 nb_avant = len(_pf_old) if _pf_old is not None else 0
-                                del _pf_old; gc.collect()
+                                del _pf_old; _gc_stdlib.collect()
                                 save_portefeuille_merge(df_pf_prep, meta_info)
                                 df_final = load_portefeuille_cache()
                                 nb_ajout = (len(df_final) - nb_avant) if df_final is not None else 0
@@ -3843,11 +3843,11 @@ elif "Accueil" in nav:
                 try:
                     with st.spinner("⏳ Lecture du fichier CA (peut prendre 30–60 s pour >90 Mo)…"):
                         df_ca_raw = _read_excel_robust(ca_file, sheet_name=0)
-                        gc.collect()
+                        _gc_stdlib.collect()
 
                     with st.spinner("⏳ Préparation et indexation de la base CA…"):
                         df_ca_prep = preparer_ca(df_ca_raw)
-                        del df_ca_raw; gc.collect()
+                        del df_ca_raw; _gc_stdlib.collect()
 
                         meta_ca = {
                             "filename": getattr(ca_file, "name", "ca.xlsx"),
@@ -4165,11 +4165,11 @@ elif "Accueil" in nav:
                 try:
                     with st.spinner("⏳ Lecture du fichier Prestations (peut prendre 30–60 s pour >90 Mo)…"):
                         df_sin_raw = _read_excel_sheet_safe(sin_file, preferred_sheet="Liste")
-                        gc.collect()
+                        _gc_stdlib.collect()
 
                     with st.spinner("⏳ Préparation de la base Prestations…"):
                         df_sin_prep = preparer_sin(df_sin_raw)
-                        del df_sin_raw; gc.collect()
+                        del df_sin_raw; _gc_stdlib.collect()
 
                         meta_sin = {
                             "filename": getattr(sin_file, "name", "prestations.xlsx"),
