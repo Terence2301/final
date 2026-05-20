@@ -466,10 +466,13 @@ def preparer_portefeuille(df):
         df = df.merge(nb_ass, on="NUMEPOLI_P", how="left")
 
     # Optimisation types mémoire
-    for col in ["ETAT_POLICE","LIBECATE","LIBEVILL","CODEAPPO","NOM_APP"]:
-        if col in df.columns: df[col] = df[col].astype("category")
+    # ETAT_POLICE en category (jamais jointé avec fillna externe)
+    if "ETAT_POLICE" in df.columns: df["ETAT_POLICE"] = df["ETAT_POLICE"].astype("category")
+    # Autres colonnes en str (pas category → évite TypeError sur fillna après merge)
+    for col in ["LIBECATE","LIBEVILL","CODEAPPO","NOM_APP"]:
+        if col in df.columns: df[col] = df[col].astype(str).replace("nan", "")
     for col in ["MONTENCA","COTI_PERIODIQUE","NBRE_PRIME"]:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
+        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")  # float64
     return df
 
 
@@ -502,7 +505,7 @@ def preparer_ca(df):
             str(x).replace(".0","").isdigit() else str(x))
 
     for col in ["CHIFAFFA","PRIMNETT","COMMAPPO"]:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
+        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")  # float64 — évite les pertes de précision sur grands montants
     if "CODEAPPO" in df.columns: df["CODEAPPO"] = df["CODEAPPO"].astype("category")
     return df
 
@@ -541,7 +544,7 @@ def preparer_sin(df):
                "Réglement Total","Règlement Total","Reglement Total"]:
         if _c in df.columns: _regl_col = _c; break
     if _regl_col is not None:
-        df["REGL_PRINC"] = pd.to_numeric(df[_regl_col], errors="coerce").fillna(0).astype("float32")
+        df["REGL_PRINC"] = pd.to_numeric(df[_regl_col], errors="coerce").fillna(0)  # float64
     else:
         df["REGL_PRINC"] = 0.0
     return df
@@ -3397,7 +3400,7 @@ elif "Accueil" in nav:
                     f"{tx_resil_pp:.1f}%" + (" ⚠️" if tx_resil_pp>25 else ""),
                     "red" if tx_resil_pp>25 else "amber","")
         with k4: kpi("💰 Encaissements actifs",fmt(ca_act_pp),"polices ACTIF","teal","")
-        with k5: kpi("💳 CA total",fmt(ca_tot_pp),"tous statuts","gold","")
+        with k5: kpi("💳 Total Encaissements",fmt(ca_tot_pp),"tous statuts","gold","")
         with k6: kpi("👥 Commerciaux",f"{nb_comm_pp:,}","apporteurs distincts","","")
 
         # KPIs avancés (rang 2)
@@ -3536,7 +3539,7 @@ elif "Accueil" in nav:
                     marker=dict(color=[v for _,v in _ca_s],colorscale=[[0,BLUEL],[0.5,GOLD],[1,GREEN]],showscale=False),
                     text=[fmt(v) for _,v in _ca_s],textposition="outside",textfont=dict(size=10,color="#2C3E50")))
                 fig_pca.update_layout(yaxis=dict(tickfont=dict(size=10)))
-                chl(fig_pca,530,f"💰 CA encaissé par produit · {label_yr}")
+                chl(fig_pca,530,f"💰 Encaissements par produit · {label_yr}")
                 st.plotly_chart(fig_pca,use_container_width=True)
             with gca2:
                 fig_sun=px.sunburst(names=_pnoms+["AFG"],parents=["AFG"]*len(_pnoms)+[""],
@@ -3866,7 +3869,7 @@ elif "Accueil" in nav:
 
         st.markdown(
             "<div style='font-size:11.5px;color:#5A6478;margin-bottom:8px;'>"
-            "📌 Colonnes utilisées : <b>CHIFAFFA</b> (CA encaissé) · <b>DATECOMP</b> (filtre temporel) · "
+            "📌 Colonnes utilisées : <b>CHIFAFFA</b> (Encaissements) · <b>DATECOMP</b> (filtre temporel) · "
             "<b>CODEAPPO</b> (commercial) · <b>NUMEPOLI</b> + <b>CODEINTE</b> (lien avec portefeuille)<br>"
             "✅ Mode <b>Ajouter</b> : cumule plusieurs exercices. Mode <b>Remplacer</b> : recharge tout.</div>",
             unsafe_allow_html=True)
@@ -3930,7 +3933,7 @@ elif "Accueil" in nav:
                         annees_ca = kpis_ca_new.get("annees", [])
                         _ca_msg = (
                             f"{_ca_mode_lbl}\n\n"
-                            f"💰 CA total (CHIFAFFA) : **{fmt(kpis_ca_new.get('ca_total',0))}** FCFA\n\n"
+                            f"💰 Total Encaissements (CHIFAFFA) : **{fmt(kpis_ca_new.get('ca_total',0))}** FCFA\n\n"
                             f"📅 Exercice(s) : **{', '.join(map(str, annees_ca))}**\n\n"
                             f"👤 **{kpis_ca_new.get('nb_comm_ca',0)}** commerciaux (CODEAPPO)")
                 except Exception as e_ca:
@@ -4054,14 +4057,14 @@ elif "Accueil" in nav:
                     </div>
                     <div style="text-align:right;">
                       <div style="font-size:1.8rem;font-weight:900;color:#E8C84A;">{fmt(_ca_tot)}</div>
-                      <div style="font-size:10px;color:rgba(255,255,255,.65);">CA total encaissé (FCFA)</div>
+                      <div style="font-size:10px;color:rgba(255,255,255,.65);">Total Encaissements (FCFA)</div>
                     </div>
                   </div>
                 </div>""", unsafe_allow_html=True)
 
                 # KPIs en grille
                 _c1,_c2,_c3,_c4,_c5,_c6 = st.columns(6)
-                with _c1: kpi("💰 CA total",      fmt(_ca_tot),        _lbl,               "gold",  "")
+                with _c1: kpi("💰 Total Encaissements",      fmt(_ca_tot),        _lbl,               "gold",  "")
                 with _c2: kpi("🧾 Quittances",    f"{_nb_q:,}",        "lignes CA",         "",      "")
                 with _c3: kpi("📋 Polices",        f"{_nb_pol:,}",      "POLICE_KEY uniques","teal",  "")
                 with _c4: kpi("👤 Commerciaux",    f"{_nb_comm}",       "CODEAPPO distincts","",      "")
@@ -5816,7 +5819,7 @@ elif "Produits" in nav:
         if _has_ca and not _ca_f.empty and "POLICE_KEY" in _pf.columns and "POLICE_KEY" in _ca_f.columns:
             _pf_map = _pf[["POLICE_KEY","LIBECATE"]].drop_duplicates("POLICE_KEY")
             _ca_join = _ca_f.merge(_pf_map, on="POLICE_KEY", how="left")
-            _ca_join["LIBECATE"] = _ca_join["LIBECATE"].fillna("Non classé")
+            _ca_join["LIBECATE"] = _ca_join["LIBECATE"].astype(object).fillna("Non classé").astype(str)
             ca_grp = _ca_join.groupby("LIBECATE").agg(
                 ca        =("CHIFAFFA","sum"),
                 nb_quitt  =("CHIFAFFA","count"),
@@ -5918,7 +5921,7 @@ elif "Produits" in nav:
         if _has_ca and "YYYYMM_COMP" in _ca.columns and _has_pf and "POLICE_KEY" in _pf.columns:
             _pf_map2 = _pf[["POLICE_KEY","LIBECATE"]].drop_duplicates("POLICE_KEY")
             _ca_evo = _ca.merge(_pf_map2, on="POLICE_KEY", how="left")
-            _ca_evo["LIBECATE"] = _ca_evo["LIBECATE"].fillna("Non classé")
+            _ca_evo["LIBECATE"] = _ca_evo["LIBECATE"].astype(object).fillna("Non classé").astype(str)
             _top8 = _prod_df.head(8)["LIBECATE"].tolist()
             _ca_top = _ca_evo[_ca_evo["LIBECATE"].isin(_top8)]
             _evo_m = _ca_top.groupby(["YYYYMM_COMP","LIBECATE"])["CHIFAFFA"].sum().reset_index().sort_values("YYYYMM_COMP")
@@ -6254,67 +6257,480 @@ elif "Clients" in nav:
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE SINISTRES v40
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE SINISTRES v41 — KPIs actuariels & gestion sinistres professionnelle
+# Indicateurs : SAP, S/P, délais, fréquence, gravité, Burning Cost, IBNR
+# ══════════════════════════════════════════════════════════════════════════════
 elif "Sinistres" in nav:
+
     _df_sin = st.session_state.get("sin_ext")
-    _yr_sin = year_selector("yr_sin_v40","📅 Filtrer par exercice sinistre")
-    sth("🏥 Prestations & Sinistres","ANALYSE DOSSIERS")
+    _pf_sin = st.session_state.get("portefeuille_ext")
+    _ca_sin = st.session_state.get("ca_ext")
+
+    # ── Bannière ──────────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#4A0000,#8B0000);border-radius:14px;
+         padding:1.2rem 1.8rem;margin-bottom:1rem;border-left:6px solid #FF6B6B;
+         box-shadow:0 6px 24px rgba(139,0,0,.25);">
+      <div style="color:#FFB3B3;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.15em;">
+        AFG Assurances Bénin Vie — Gestion Sinistres v41</div>
+      <div style="color:white;font-size:1.2rem;font-weight:900;">
+        🏥 Prestations & Sinistres — Analyse Actuarielle</div>
+      <div style="color:rgba(255,255,255,.65);font-size:11px;">
+        {'✅ Prestations : ' + f"{len(_df_sin):,}" + ' dossiers' if _df_sin is not None and not _df_sin.empty else '⚠️ Base Prestations non chargée'}
+        &nbsp;·&nbsp;
+        {'✅ Portefeuille : ' + f"{len(_pf_sin):,}" + ' polices' if _pf_sin is not None and not _pf_sin.empty else '⚠️ Portefeuille non chargé'}
+        &nbsp;·&nbsp;
+        {'✅ Base CA chargée' if _ca_sin is not None and not _ca_sin.empty else '⚠️ CA non chargé'}
+      </div>
+    </div>""", unsafe_allow_html=True)
 
     if _df_sin is None or _df_sin.empty:
-        alert("📥 Importez la base <b>Prestations</b> depuis <b>Accueil</b> pour activer cette page.","warn"); st.stop()
+        alert("📥 Importez la base <b>Prestations</b> depuis <b>Accueil → Import Excel Externe</b>.", "warn")
+        st.stop()
 
-    # Filtrer par année Date Survenance
+    # ── Sélecteur période ─────────────────────────────────────────────────────
+    _yr_sin = year_selector("yr_sin_v41", "📅 Exercice sinistre (Date Survenance)")
     _lbl_sin = yr_label(_yr_sin)
-    if _yr_sin and _yr_sin != "Toutes" and "Date Survenance_ANNEE" in _df_sin.columns:
-        _yr_int_s = [int(y) for y in (_yr_sin if isinstance(_yr_sin,list) else [_yr_sin]) if str(y).isdigit()]
-        _df_sf = _df_sin[_df_sin["Date Survenance_ANNEE"].isin(_yr_int_s)] if _yr_int_s else _df_sin.copy()
+
+    # Filtrage robuste
+    if _yr_sin and _yr_sin != "Toutes":
+        _yrs_int_sin = [int(y) for y in (_yr_sin if isinstance(_yr_sin, list) else [_yr_sin]) if str(y).isdigit()]
+        _col_yr_sin = next((c for c in ["Date Survenance_ANNEE","Date Déclaration_ANNEE","Date Comptabilisation_ANNEE"] if c in _df_sin.columns), None)
+        if _col_yr_sin and _yrs_int_sin:
+            _df_sf = _df_sin[pd.to_numeric(_df_sin[_col_yr_sin], errors="coerce").isin(_yrs_int_sin)].copy()
+        else:
+            _df_sf = _df_sin.copy()
     else:
         _df_sf = _df_sin.copy()
 
-    st.caption(f"📌 Période : **{_lbl_sin}** · {len(_df_sf):,} dossiers")
+    _nb_sin = len(_df_sf)
+    if _nb_sin == 0:
+        alert(f"Aucun dossier pour {_lbl_sin}.", "warn"); st.stop()
 
-    _regl_tot = float(_df_sf["REGL_PRINC"].sum()) if "REGL_PRINC" in _df_sf.columns else 0.0
-    _nb_clos  = int((_df_sf["Statut"]=="CLOS").sum()) if "Statut" in _df_sf.columns else 0
-    _nb_ouv   = int((_df_sf["Statut"]=="OUVERT").sum()) if "Statut" in _df_sf.columns else 0
-    _nb_sin   = len(_df_sf)
-    _sap      = float(_df_sf[_df_sf["Statut"]=="OUVERT"]["REGL_PRINC"].sum()) if "Statut" in _df_sf.columns and "REGL_PRINC" in _df_sf.columns else 0.0
+    st.caption(f"📌 Période : **{_lbl_sin}** · **{_nb_sin:,}** dossiers sur {len(_df_sin):,} total")
 
-    _s1,_s2,_s3,_s4,_s5 = st.columns(5)
-    with _s1: kpi("📂 Dossiers",    f"{_nb_sin:,}",   _lbl_sin,      "","")
-    with _s2: kpi("💰 Total réglé", fmt(_regl_tot),    "FCFA",        "gold","")
-    with _s3: kpi("✅ Clos",        f"{_nb_clos:,}",   f"{_nb_clos/max(_nb_sin,1)*100:.1f}%","green","")
-    with _s4: kpi("🔄 Ouverts",     f"{_nb_ouv:,}",    f"{_nb_ouv/max(_nb_sin,1)*100:.1f}%","amber","")
-    with _s5: kpi("📌 SAP",         fmt(_sap),         "provisions ouvertes","red","")
+    # ── Calculs actuariels ────────────────────────────────────────────────────
+    _regl_tot  = float(_df_sf["REGL_PRINC"].sum()) if "REGL_PRINC" in _df_sf.columns else 0.0
+    _has_stat  = "Statut" in _df_sf.columns
+    _nb_clos   = int((_df_sf["Statut"] == "CLOS").sum())   if _has_stat else 0
+    _nb_ouv    = int((_df_sf["Statut"] == "OUVERT").sum()) if _has_stat else 0
+    _nb_rej    = int((_df_sf["Statut"] == "REJETE").sum()) if _has_stat else 0
+    _nb_autres = _nb_sin - _nb_clos - _nb_ouv - _nb_rej
 
-    _g1s,_g2s = st.columns(2)
-    with _g1s:
-        if "NAT_NORM" in _df_sf.columns:
-            _nat = _df_sf.groupby("NAT_NORM").agg(nb=("NAT_NORM","count"),regl=("REGL_PRINC","sum")).reset_index().sort_values("regl",ascending=False)
-            fig_nat = go.Figure(go.Bar(y=_nat["NAT_NORM"].astype(str).str[:30],x=_nat["regl"],orientation="h",
-                marker=dict(color=_nat["regl"],colorscale=[[0,BLUEL],[1,NAVY]],showscale=False),
-                text=[fmt(v) for v in _nat["regl"]],textposition="outside"))
-            fig_nat.update_layout(yaxis=dict(autorange="reversed",tickfont=dict(size=9)))
-            chl(fig_nat,420,"💰 Règlements par nature de sinistre")
-            st.plotly_chart(fig_nat, use_container_width=True)
-    with _g2s:
-        if "Statut" in _df_sf.columns:
-            _st_s = _df_sf["Statut"].value_counts().reset_index()
-            _st_s.columns = ["Statut","Nb"]
-            fig_st_s = go.Figure(go.Pie(labels=_st_s["Statut"],values=_st_s["Nb"],hole=0.44,
-                marker=dict(colors=[GREEN if s=="CLOS" else AMBER if s=="OUVERT" else RED for s in _st_s["Statut"]]),
-                textinfo="percent+label+value",textfont_size=12))
-            chl(fig_st_s,420,"📊 Statuts dossiers")
-            st.plotly_chart(fig_st_s, use_container_width=True)
+    # SAP (Sinistres À Payer) = provisions sur dossiers ouverts
+    _sap = float(_df_sf[_df_sf["Statut"] == "OUVERT"]["REGL_PRINC"].sum()) if _has_stat and "REGL_PRINC" in _df_sf.columns else 0.0
+    # Coût moyen sinistre réglé
+    _cout_moy = _regl_tot / max(_nb_clos, 1)
+    # Gravité = coût moyen par sinistre déclaré
+    _gravite  = _regl_tot / max(_nb_sin, 1)
+    # Taux de clôture
+    _tx_clos  = _nb_clos / max(_nb_sin, 1) * 100
+    # Taux de rejet
+    _tx_rej   = _nb_rej / max(_nb_sin, 1) * 100
 
-    # Tableau
-    if not _df_sf.empty:
-        _cols_s = [c for c in ["No Sinistre","Nature Sinistre","Statut","Date Survenance","REGL_PRINC","POLICE_KEY"] if c in _df_sf.columns]
-        _disp_s = _df_sf[_cols_s].head(500).copy()
-        if "REGL_PRINC" in _disp_s.columns: _disp_s["REGL_PRINC"] = _disp_s["REGL_PRINC"].apply(fmt)
-        st.dataframe(_disp_s, use_container_width=True, hide_index=True, height=400)
+    # Ratio S/P = sinistres/primes (si CA disponible)
+    _ca_sin_tot = float(_ca_sin["CHIFAFFA"].sum()) if _ca_sin is not None and not _ca_sin.empty and "CHIFAFFA" in _ca_sin.columns else 0.0
+    _sp_ratio   = _regl_tot / max(_ca_sin_tot, 1) * 100 if _ca_sin_tot > 0 else None
 
-# ══════════════════════════════════════════════════════════════════════════════
-# PAGE PRÉVISIONS v40
-# ══════════════════════════════════════════════════════════════════════════════
+    # Burning Cost = coût sinistres / nb polices * 1000 (pour 1000 assurés)
+    _nb_pol_sin = len(_pf_sin) if _pf_sin is not None and not _pf_sin.empty else 0
+    _burning_cost = _regl_tot / max(_nb_pol_sin, 1) * 1000 if _nb_pol_sin > 0 else None
+
+    # Fréquence sinistres = nb sinistres / nb polices * 100
+    _freq_sin = _nb_sin / max(_nb_pol_sin, 1) * 100 if _nb_pol_sin > 0 else None
+
+    # Délai de règlement (jours)
+    _delai_moyen = None
+    if "Date Survenance" in _df_sf.columns and "Date validation" in _df_sf.columns:
+        _d_surv = pd.to_datetime(_df_sf["Date Survenance"], dayfirst=True, errors="coerce")
+        _d_val  = pd.to_datetime(_df_sf["Date validation"], dayfirst=True, errors="coerce")
+        _delais = (_d_val - _d_surv).dt.days.dropna()
+        _delais = _delais[_delais >= 0]
+        if not _delais.empty:
+            _delai_moyen = float(_delais.mean())
+
+    # Délai déclaration
+    _delai_decl = None
+    if "Date Survenance" in _df_sf.columns and "Date Déclaration" in _df_sf.columns:
+        _d_surv2 = pd.to_datetime(_df_sf["Date Survenance"], dayfirst=True, errors="coerce")
+        _d_decl  = pd.to_datetime(_df_sf["Date Déclaration"], dayfirst=True, errors="coerce")
+        _d2 = (_d_decl - _d_surv2).dt.days.dropna()
+        _d2 = _d2[(_d2 >= 0) & (_d2 <= 3650)]
+        if not _d2.empty:
+            _delai_decl = float(_d2.mean())
+
+    # ── KPIs Ligne 1 — Volume et financiers ───────────────────────────────────
+    st.markdown("---")
+    st.markdown("<div style='font-size:12px;font-weight:800;color:#8B0000;margin-bottom:8px;'>📊 INDICATEURS FINANCIERS & VOLUME</div>", unsafe_allow_html=True)
+    _k1,_k2,_k3,_k4,_k5,_k6 = st.columns(6)
+    with _k1: kpi("📂 Dossiers",        f"{_nb_sin:,}",         _lbl_sin,              "",       "")
+    with _k2: kpi("💰 Total réglé",      fmt(_regl_tot),         "FCFA versés",         "gold",   "")
+    with _k3: kpi("📌 SAP",             fmt(_sap),               "provisions ouvertes", "red",    "")
+    with _k4: kpi("💎 Coût moyen",       fmt(_cout_moy),         "par dossier clos",    "teal",   "")
+    with _k5: kpi("⚖️ Gravité moy.",    fmt(_gravite),           "coût/sinistre décl.", "amber",  "")
+    with _k6:
+        if _sp_ratio is not None:
+            _sp_c = "red" if _sp_ratio > 80 else ("amber" if _sp_ratio > 60 else "green")
+            kpi("📐 Ratio S/P", f"{_sp_ratio:.1f}%", "sinistres/primes CA", _sp_c, "")
+        else:
+            kpi("📐 Ratio S/P", "—", "chargez la base CA", "", "")
+
+    # ── KPIs Ligne 2 — Gestion et qualité ────────────────────────────────────
+    st.markdown("<div style='font-size:12px;font-weight:800;color:#8B0000;margin:12px 0 8px;'>🎯 INDICATEURS DE GESTION & PERFORMANCE</div>", unsafe_allow_html=True)
+    _k7,_k8,_k9,_k10,_k11,_k12 = st.columns(6)
+    with _k7: kpi("✅ Dossiers clos",    f"{_nb_clos:,}",        f"{_tx_clos:.1f}%",    "green",  "")
+    with _k8: kpi("🔄 Ouverts (SAP)",   f"{_nb_ouv:,}",          f"{_nb_ouv/max(_nb_sin,1)*100:.1f}%","amber","")
+    with _k9: kpi("❌ Rejetés",          f"{_nb_rej:,}",          f"{_tx_rej:.1f}%",     "red" if _tx_rej>15 else "","")
+    with _k10:
+        if _delai_moyen is not None:
+            _d_c = "green" if _delai_moyen<30 else ("amber" if _delai_moyen<60 else "red")
+            kpi("⏱️ Délai règlement", f"{_delai_moyen:.0f}j", "survenance→validation", _d_c, "")
+        else:
+            kpi("⏱️ Délai règlement", "—", "données absentes", "", "")
+    with _k11:
+        if _delai_decl is not None:
+            kpi("📋 Délai déclaration", f"{_delai_decl:.0f}j", "survenance→déclaration", "teal", "")
+        else:
+            kpi("📋 Délai déclaration", "—", "données absentes", "", "")
+    with _k12:
+        if _burning_cost is not None:
+            kpi("🔥 Burning Cost", fmt(_burning_cost), "pour 1 000 polices", "red" if _burning_cost>500000 else "amber", "")
+        else:
+            kpi("🔥 Burning Cost", "—", "chargez le portefeuille", "", "")
+
+    # ── KPIs Ligne 3 — Actuariels avancés ────────────────────────────────────
+    st.markdown("<div style='font-size:12px;font-weight:800;color:#8B0000;margin:12px 0 8px;'>🔬 INDICATEURS ACTUARIELS AVANCÉS</div>", unsafe_allow_html=True)
+    _k13,_k14,_k15,_k16,_k17,_k18 = st.columns(6)
+    with _k13:
+        if _freq_sin is not None:
+            kpi("📊 Fréquence sinistres", f"{_freq_sin:.2f}%", "sin./polices × 100", "amber" if _freq_sin>5 else "teal", "")
+        else:
+            kpi("📊 Fréquence sinistres", "—", "chargez le portefeuille", "", "")
+    with _k14:
+        # IBNR estimé simplifié (Sinistres survenus non déclarés) = 5-10% du SAP
+        _ibnr_est = _sap * 0.07
+        kpi("🔍 IBNR estimé", fmt(_ibnr_est), "7% du SAP (provision)", "red", "")
+    with _k15:
+        # Charge sinistre ultime = réglé + SAP + IBNR
+        _charge_ultime = _regl_tot + _sap + _sap * 0.07
+        kpi("📈 Charge ultime", fmt(_charge_ultime), "réglé+SAP+IBNR", "gold", "")
+    with _k16:
+        # Taux de sinistralité nette = charge ultime / CA
+        _tx_sini = _charge_ultime / max(_ca_sin_tot, 1) * 100 if _ca_sin_tot > 0 else None
+        if _tx_sini is not None:
+            kpi("🎯 Tx sinistralité nette", f"{_tx_sini:.1f}%", "charge ultime/CA", "red" if _tx_sini>80 else "amber", "")
+        else:
+            kpi("🎯 Tx sinistralité nette", "—", "chargez la base CA", "", "")
+    with _k17:
+        # Dossiers en instance > 90 jours (délai excessif CIMA)
+        _old_dossiers = 0
+        if "Date Déclaration" in _df_sf.columns and _has_stat:
+            _d_decl_all = pd.to_datetime(_df_sf["Date Déclaration"], dayfirst=True, errors="coerce")
+            _age = (pd.Timestamp.today() - _d_decl_all).dt.days
+            _old_dossiers = int((_age >= 90).sum())
+        kpi("⚠️ En instance >90j", f"{_old_dossiers:,}",
+            f"{_old_dossiers/max(_nb_ouv,1)*100:.0f}% des ouverts",
+            "red" if _old_dossiers > 0 else "green", "")
+    with _k18:
+        # Taux de règlement CIMA (objectif <30 jours)
+        _tx_cima = 0.0
+        if _delai_moyen is not None:
+            _tx_cima_respect = min(_delai_moyen / 30 * 100, 100)
+            _cima_c = "green" if _delai_moyen <= 30 else ("amber" if _delai_moyen <= 60 else "red")
+            kpi("🏛️ Conformité CIMA", f"{'✅' if _delai_moyen<=30 else '⚠️'} {_delai_moyen:.0f}j",
+                "norme ≤30j règlement", _cima_c, "")
+        else:
+            kpi("🏛️ Conformité CIMA", "—", "norme ≤30j", "", "")
+
+    # ── Alertes actuarielles ──────────────────────────────────────────────────
+    if _sp_ratio is not None and _sp_ratio > 80:
+        alert(f"🔴 <b>Ratio S/P critique : {_sp_ratio:.1f}%</b> — La sinistralité dépasse 80% des primes encaissées. Révision tarifaire recommandée.", "danger")
+    if _old_dossiers > 0:
+        alert(f"⚠️ <b>{_old_dossiers:,} dossiers en instance depuis >90 jours</b> — Non-conformité CIMA potentielle.", "warn")
+    if _tx_rej > 20:
+        alert(f"🟡 Taux de rejet élevé : <b>{_tx_rej:.1f}%</b> — Vérifier les critères de prise en charge.", "warn")
+
+    st.markdown("---")
+
+    # ── Onglets d'analyse ─────────────────────────────────────────────────────
+    _ts1,_ts2,_ts3,_ts4,_ts5 = st.tabs([
+        "📊 Analyse par nature",
+        "📅 Évolution temporelle",
+        "🔬 Analyse délais",
+        "🗂️ Dossiers détail",
+        "📋 Tableau & Export"
+    ])
+
+    # ── Tab 1 : Analyse par nature ─────────────────────────────────────────────
+    with _ts1:
+        sth(f"📊 Sinistres par nature — {_lbl_sin}", "RÉPARTITION & COÛT")
+        if "NAT_NORM" in _df_sf.columns and "REGL_PRINC" in _df_sf.columns:
+            _nat = _df_sf.groupby("NAT_NORM").agg(
+                nb       =("NAT_NORM",    "count"),
+                regl     =("REGL_PRINC",  "sum"),
+                cout_moy =("REGL_PRINC",  "mean"),
+                clos     =("Statut",      lambda x: (x=="CLOS").sum()) if _has_stat else ("NAT_NORM","count"),
+            ).reset_index().sort_values("regl", ascending=False)
+            _nat["NAT_NORM"] = _nat["NAT_NORM"].astype(str)
+            _nat["tx_clos"]  = (_nat["clos"] / _nat["nb"].clip(1) * 100).round(1)
+
+            _tg1, _tg2 = st.columns(2)
+            with _tg1:
+                fig_nat_r = go.Figure(go.Bar(
+                    y=_nat["NAT_NORM"].str[:30], x=_nat["regl"], orientation="h",
+                    marker=dict(color=_nat["regl"],
+                        colorscale=[[0,"#FF6B6B"],[0.5,"#FF9F43"],[1,"#8B0000"]],showscale=False),
+                    text=[fmt(v) for v in _nat["regl"]], textposition="outside",
+                    hovertemplate="<b>%{y}</b><br>Réglé : %{x:,.0f} FCFA<br>Dossiers : %{customdata}<extra></extra>",
+                    customdata=_nat["nb"]))
+                fig_nat_r.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+                chl(fig_nat_r, 420, f"💰 Montants réglés par nature · {_lbl_sin}")
+                st.plotly_chart(fig_nat_r, use_container_width=True)
+            with _tg2:
+                fig_nat_p = go.Figure(go.Pie(
+                    labels=_nat["NAT_NORM"].str[:25],
+                    values=_nat["nb"], hole=0.44,
+                    textinfo="percent+label",
+                    hovertemplate="<b>%{label}</b><br>Dossiers : %{value:,}<br>Part : %{percent}<extra></extra>"))
+                chl(fig_nat_p, 420, f"📊 Répartition dossiers par nature · {_lbl_sin}")
+                st.plotly_chart(fig_nat_p, use_container_width=True)
+
+            # Coût moyen et taux de clôture par nature
+            _tg3, _tg4 = st.columns(2)
+            with _tg3:
+                fig_cout = go.Figure(go.Bar(
+                    y=_nat["NAT_NORM"].str[:30], x=_nat["cout_moy"], orientation="h",
+                    marker_color=GOLD, text=[fmt(v) for v in _nat["cout_moy"]],
+                    textposition="outside"))
+                fig_cout.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+                chl(fig_cout, 380, "💎 Coût moyen par dossier")
+                st.plotly_chart(fig_cout, use_container_width=True)
+            with _tg4:
+                fig_clos = go.Figure(go.Bar(
+                    y=_nat["NAT_NORM"].str[:30], x=_nat["tx_clos"], orientation="h",
+                    marker_color=[GREEN if r>=80 else AMBER if r>=50 else RED for r in _nat["tx_clos"]],
+                    text=[f"{r:.1f}%" for r in _nat["tx_clos"]], textposition="outside"))
+                fig_clos.update_layout(yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+                chl(fig_clos, 380, "✅ Taux de clôture par nature (%)")
+                st.plotly_chart(fig_clos, use_container_width=True)
+
+            # Statuts par nature
+            if _has_stat:
+                _nat_stat = _df_sf.groupby(["NAT_NORM","Statut"]).size().unstack(fill_value=0).reset_index()
+                _nat_stat["NAT_NORM"] = _nat_stat["NAT_NORM"].astype(str)
+                fig_ns = go.Figure()
+                _stat_colors = {"CLOS":GREEN,"OUVERT":AMBER,"REJETE":RED}
+                for _stat_col in [c for c in ["CLOS","OUVERT","REJETE"] if c in _nat_stat.columns]:
+                    fig_ns.add_trace(go.Bar(
+                        name=_stat_col, y=_nat_stat["NAT_NORM"].str[:25],
+                        x=_nat_stat[_stat_col], orientation="h",
+                        marker_color=_stat_colors.get(_stat_col, BLUEL)))
+                fig_ns.update_layout(barmode="stack",
+                    yaxis=dict(autorange="reversed", tickfont=dict(size=9)))
+                chl(fig_ns, 400, f"📊 Statuts par nature · {_lbl_sin}")
+                st.plotly_chart(fig_ns, use_container_width=True)
+
+    # ── Tab 2 : Évolution temporelle ───────────────────────────────────────────
+    with _ts2:
+        sth("📅 Évolution temporelle des sinistres", "TENDANCES & SAISONNALITÉ")
+
+        _d_surv_all = pd.to_datetime(
+            _df_sin.get("Date Survenance", pd.Series()) if hasattr(_df_sin, "get") else _df_sin["Date Survenance"] if "Date Survenance" in _df_sin.columns else pd.Series(),
+            dayfirst=True, errors="coerce") if "Date Survenance" in _df_sin.columns else None
+
+        if "Date Survenance" in _df_sf.columns:
+            _df_sf_t = _df_sf.copy()
+            _d_s = pd.to_datetime(_df_sf_t["Date Survenance"], dayfirst=True, errors="coerce")
+            _df_sf_t["_ANNEE_SIN"] = _d_s.dt.year
+            _df_sf_t["_MOIS_SIN"]  = _d_s.dt.to_period("M").astype(str)
+
+            _tev1, _tev2 = st.columns(2)
+            with _tev1:
+                _ev_ann = _df_sf_t.groupby("_ANNEE_SIN").agg(
+                    nb=("_ANNEE_SIN","count"),
+                    regl=("REGL_PRINC","sum") if "REGL_PRINC" in _df_sf_t.columns else ("_ANNEE_SIN","count")
+                ).reset_index().sort_values("_ANNEE_SIN")
+                fig_ev_a = make_subplots(specs=[[{"secondary_y":True}]])
+                fig_ev_a.add_trace(go.Bar(x=_ev_ann["_ANNEE_SIN"].astype(str),
+                    y=_ev_ann["regl"], name="💰 Réglements", marker_color="#FF6B6B", opacity=0.85),
+                    secondary_y=False)
+                fig_ev_a.add_trace(go.Scatter(x=_ev_ann["_ANNEE_SIN"].astype(str),
+                    y=_ev_ann["nb"], name="📂 Dossiers",
+                    line=dict(color=NAVY,width=2.5), mode="lines+markers"), secondary_y=True)
+                fig_ev_a.update_yaxes(title_text="Montant réglé (FCFA)", secondary_y=False)
+                fig_ev_a.update_yaxes(title_text="Nb dossiers", secondary_y=True, showgrid=False)
+                chl(fig_ev_a, 420, "📅 Sinistres par année — Volume & Montants")
+                st.plotly_chart(fig_ev_a, use_container_width=True)
+
+            with _tev2:
+                _ev_mois = _df_sf_t.groupby("_MOIS_SIN").agg(
+                    nb=("_MOIS_SIN","count"),
+                    regl=("REGL_PRINC","sum") if "REGL_PRINC" in _df_sf_t.columns else ("_MOIS_SIN","count")
+                ).reset_index().sort_values("_MOIS_SIN")
+                fig_ev_m = go.Figure()
+                fig_ev_m.add_trace(go.Bar(x=_ev_mois["_MOIS_SIN"], y=_ev_mois["regl"],
+                    name="💰 Réglements", marker_color="#FF9F43", opacity=0.85))
+                fig_ev_m.add_trace(go.Scatter(x=_ev_mois["_MOIS_SIN"], y=_ev_mois["nb"],
+                    name="📂 Dossiers", line=dict(color="#8B0000",width=2), mode="lines+markers",
+                    yaxis="y2"))
+                fig_ev_m.update_layout(
+                    yaxis=dict(title="Montant réglé"),
+                    yaxis2=dict(title="Dossiers", overlaying="y", side="right", showgrid=False),
+                    hovermode="x unified")
+                chl(fig_ev_m, 420, "📅 Évolution mensuelle")
+                st.plotly_chart(fig_ev_m, use_container_width=True)
+
+            # Saisonnalité (mois)
+            _df_sf_t["_MOIS_NUM"] = _d_s.dt.month
+            _saison = _df_sf_t.groupby("_MOIS_NUM").agg(
+                nb=("_MOIS_NUM","count"),
+                regl=("REGL_PRINC","sum") if "REGL_PRINC" in _df_sf_t.columns else ("_MOIS_NUM","count")
+            ).reset_index()
+            _mois_noms = {1:"Jan",2:"Fév",3:"Mar",4:"Avr",5:"Mai",6:"Juin",
+                          7:"Juil",8:"Aoû",9:"Sep",10:"Oct",11:"Nov",12:"Déc"}
+            _saison["_NOM"] = _saison["_MOIS_NUM"].map(_mois_noms)
+            fig_sais = go.Figure(go.Bar(
+                x=_saison["_NOM"], y=_saison["nb"],
+                marker=dict(color=_saison["nb"],
+                    colorscale=[[0,"#FFE4E1"],[0.5,"#FF6B6B"],[1,"#8B0000"]],showscale=False),
+                text=_saison["nb"].astype(str), textposition="outside"))
+            chl(fig_sais, 380, "🌡️ Saisonnalité — Dossiers par mois (tous exercices)")
+            st.plotly_chart(fig_sais, use_container_width=True)
+
+    # ── Tab 3 : Analyse délais ─────────────────────────────────────────────────
+    with _ts3:
+        sth("🔬 Analyse des délais de traitement", "CONFORMITÉ CIMA & PERFORMANCE")
+
+        _has_dates = all(c in _df_sf.columns for c in ["Date Survenance","Date Déclaration"])
+        if _has_dates:
+            _df_del = _df_sf.copy()
+            _d_surv3 = pd.to_datetime(_df_del["Date Survenance"], dayfirst=True, errors="coerce")
+            _d_decl3 = pd.to_datetime(_df_del["Date Déclaration"], dayfirst=True, errors="coerce")
+            _df_del["_delay_decl"] = (_d_decl3 - _d_surv3).dt.days
+            _df_del = _df_del[(_df_del["_delay_decl"] >= 0) & (_df_del["_delay_decl"] <= 3650)]
+
+            if "Date validation" in _df_del.columns:
+                _d_val3 = pd.to_datetime(_df_del["Date validation"], dayfirst=True, errors="coerce")
+                _df_del["_delay_regl"] = (_d_val3 - _d_surv3).dt.days
+                _df_del["_delay_regl"] = _df_del["_delay_regl"].clip(lower=0)
+
+            _td1, _td2 = st.columns(2)
+            with _td1:
+                fig_del_d = go.Figure(go.Histogram(
+                    x=_df_del["_delay_decl"].dropna(),
+                    nbinsx=30, marker_color="#FF9F43", opacity=0.85))
+                fig_del_d.add_vline(x=_df_del["_delay_decl"].mean(),
+                    line_dash="dash", line_color=NAVY, line_width=2,
+                    annotation_text=f"Moy. {_df_del['_delay_decl'].mean():.0f}j",
+                    annotation_font_size=10)
+                fig_del_d.add_vline(x=30, line_dash="dot", line_color=RED, line_width=1.5,
+                    annotation_text="Norme CIMA 30j", annotation_font_size=9,
+                    annotation_font_color=RED)
+                chl(fig_del_d, 400, "📋 Distribution délai survenance → déclaration (jours)")
+                st.plotly_chart(fig_del_d, use_container_width=True)
+            with _td2:
+                if "_delay_regl" in _df_del.columns:
+                    _dr_clean = _df_del["_delay_regl"].dropna()
+                    fig_del_r = go.Figure(go.Histogram(
+                        x=_dr_clean, nbinsx=30, marker_color="#8B0000", opacity=0.85))
+                    fig_del_r.add_vline(x=_dr_clean.mean(),
+                        line_dash="dash", line_color=GOLD, line_width=2,
+                        annotation_text=f"Moy. {_dr_clean.mean():.0f}j",
+                        annotation_font_size=10)
+                    fig_del_r.add_vline(x=30, line_dash="dot", line_color=RED, line_width=1.5,
+                        annotation_text="Norme CIMA 30j", annotation_font_size=9)
+                    chl(fig_del_r, 400, "⏱️ Distribution délai survenance → règlement (jours)")
+                    st.plotly_chart(fig_del_r, use_container_width=True)
+
+            # Catégories de délai
+            if "_delay_regl" in _df_del.columns:
+                _df_del["_cat_del"] = pd.cut(_df_del["_delay_regl"],
+                    bins=[0,30,60,90,180,float("inf")],
+                    labels=["≤30j (CIMA✅)","31-60j","61-90j","91-180j",">180j"])
+                _cat_del = _df_del["_cat_del"].value_counts().sort_index().reset_index()
+                _cat_del.columns = ["Catégorie","Nb"]
+                _colors_del = [GREEN, AMBER, "#FF9F43", RED, "#8B0000"]
+                fig_cat_del = go.Figure(go.Bar(
+                    x=_cat_del["Catégorie"].astype(str),
+                    y=_cat_del["Nb"],
+                    marker_color=_colors_del[:len(_cat_del)],
+                    text=_cat_del["Nb"].astype(str), textposition="outside"))
+                chl(fig_cat_del, 380, "🏛️ Répartition délais de règlement — Conformité CIMA")
+                st.plotly_chart(fig_cat_del, use_container_width=True)
+        else:
+            alert("Les colonnes Date Survenance et/ou Date Déclaration sont nécessaires pour l'analyse des délais.", "info")
+
+    # ── Tab 4 : Dossiers en instance ──────────────────────────────────────────
+    with _ts4:
+        sth("🗂️ Dossiers ouverts en instance", "SUIVI SAP & VIEILLISSEMENT")
+
+        if _has_stat:
+            _df_ouv = _df_sf[_df_sf["Statut"] == "OUVERT"].copy()
+            if not _df_ouv.empty:
+                if "Date Déclaration" in _df_ouv.columns:
+                    _d_decl_ouv = pd.to_datetime(_df_ouv["Date Déclaration"], dayfirst=True, errors="coerce")
+                    _df_ouv["_age"] = (pd.Timestamp.today() - _d_decl_ouv).dt.days.clip(lower=0)
+                    _df_ouv["_urgence"] = pd.cut(_df_ouv["_age"],
+                        bins=[0,30,60,90,float("inf")],
+                        labels=["Récent (<30j)","Modéré (30-60j)","Urgent (60-90j)","Critique (>90j)"])
+
+                    _urg = _df_ouv["_urgence"].value_counts().sort_index().reset_index()
+                    _urg.columns = ["Catégorie","Nb"]
+                    _urg_c = [GREEN, AMBER, "#FF9F43", RED]
+                    fig_urg = go.Figure(go.Bar(
+                        x=_urg["Catégorie"].astype(str), y=_urg["Nb"],
+                        marker_color=_urg_c[:len(_urg)],
+                        text=_urg["Nb"].astype(str), textposition="outside"))
+                    chl(fig_urg, 380, "⚠️ Vieillissement dossiers ouverts")
+                    st.plotly_chart(fig_urg, use_container_width=True)
+
+                # Tableau dossiers en instance critiques
+                _cols_ouv = [c for c in ["No Sinistre","Nature Sinistre","Date Survenance",
+                    "Date Déclaration","REGL_PRINC","_age","_urgence"] if c in _df_ouv.columns]
+                _disp_ouv = _df_ouv.sort_values("_age", ascending=False).head(200)[_cols_ouv].copy() if "_age" in _df_ouv.columns else _df_ouv.head(200)[_cols_ouv].copy()
+                if "REGL_PRINC" in _disp_ouv.columns: _disp_ouv["REGL_PRINC"] = _disp_ouv["REGL_PRINC"].apply(fmt)
+                st.dataframe(_disp_ouv, use_container_width=True, hide_index=True, height=450)
+            else:
+                alert("Aucun dossier ouvert pour cette période.", "good")
+        else:
+            alert("Colonne 'Statut' nécessaire pour le suivi des dossiers en instance.", "info")
+
+    # ── Tab 5 : Tableau complet & Export ──────────────────────────────────────
+    with _ts5:
+        sth(f"📋 Tableau complet — {_nb_sin:,} dossiers · {_lbl_sin}", "EXPORT EXCEL")
+
+        _cols_exp_s = [c for c in ["No Sinistre","Nature Sinistre","NAT_NORM","Statut",
+            "Date Survenance","Date Déclaration","Date validation","REGL_PRINC","POLICE_KEY"] if c in _df_sf.columns]
+        _disp_full = _df_sf[_cols_exp_s].copy()
+        if "REGL_PRINC" in _disp_full.columns: _disp_full["REGL_PRINC"] = _disp_full["REGL_PRINC"].apply(fmt)
+        st.dataframe(_disp_full, use_container_width=True, hide_index=True, height=500)
+
+        # Synthèse actuarielle exportable
+        _synth_sin = {
+            "Indicateur": ["Nb dossiers","Total réglé (FCFA)","SAP (FCFA)","Coût moyen (FCFA)",
+                           "Gravité moyenne (FCFA)","Taux clôture","Taux rejet","Ratio S/P",
+                           "Burning Cost (/1000 polices)","Fréquence sinistres","IBNR estimé","Charge ultime"],
+            "Valeur": [f"{_nb_sin:,}", fmt(_regl_tot), fmt(_sap), fmt(_cout_moy),
+                       fmt(_gravite), f"{_tx_clos:.1f}%", f"{_tx_rej:.1f}%",
+                       f"{_sp_ratio:.1f}%" if _sp_ratio is not None else "—",
+                       fmt(_burning_cost) if _burning_cost is not None else "—",
+                       f"{_freq_sin:.2f}%" if _freq_sin is not None else "—",
+                       fmt(_sap * 0.07), fmt(_regl_tot + _sap * 1.07)],
+            "Période": [_lbl_sin] * 12
+        }
+        _df_synth_sin = pd.DataFrame(_synth_sin)
+        _buf_sin_exp = io.BytesIO()
+        with pd.ExcelWriter(_buf_sin_exp, engine="openpyxl") as _wx_sin_exp:
+            _df_sf[_cols_exp_s].to_excel(_wx_sin_exp, index=False, sheet_name="Dossiers")
+            _df_synth_sin.to_excel(_wx_sin_exp, index=False, sheet_name="Synthèse Actuarielle")
+        st.download_button(
+            f"⬇️ Exporter Sinistres + Synthèse Actuarielle · {_lbl_sin}",
+            data=_buf_sin_exp.getvalue(),
+            file_name=f"AFG_Sinistres_{_lbl_sin.replace(' ','_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True)
+
 elif "Prévisions" in nav:
     sth("🔮 Prévisions & Tendances","MODÈLE POLYNOMIAL")
     try:
