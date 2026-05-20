@@ -1,0 +1,22 @@
+[server]
+# Limite upload : 500 Mo pour fichiers volumineux (portefeuille 123 Mo, CA 90 Mo)
+maxUploadSize = 500
+# Timeout WebSocket (ms) — évite déconnexion sur gros fichiers
+maxMessageSize = 500
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
+
+[runner]
+# Évite les reruns automatiques intempestifs
+fastReruns = true
+enforceSerializableSessionState = false
+
+[theme]
+primaryColor = "#003366"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
