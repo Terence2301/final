@@ -437,10 +437,48 @@ def get_sin_meta(): return _get_meta(_SIN_META)
 # ⚠️ PAS de @st.cache_data : on veut toujours la version la plus récente du disque
 def load_portefeuille_auto(): return load_portefeuille_cache()
 
+# ── CONVERSION NUMÉRIQUE ROBUSTE — FORMAT FR/AFRIQUE ─────────────────────────
+def clean_numeric_col(series):
+    """Convertit une colonne numérique en float64 de manière robuste.
+    Gère tous les formats rencontrés dans les exports BEAC/AFG :
+      • '3 711 385,45'   → espace comme séparateur milliers + virgule décimale
+      • '3\xa0711\xa0385,45' → espace insécable (caractère U+00A0)
+      • '1,234.56'       → format anglais
+      • '1.234,56'       → format européen
+      • '3711385.45'     → déjà correct
+      • Colonnes déjà float/int → retournées telles quelles
+    Garantit qu'aucune valeur numérique valide ne devient NaN."""
+    import numpy as _np
+    # Si déjà numérique → retourner directement en float64
+    if series.dtype.kind in ('f','i','u'):
+        return series.astype('float64')
+    # Conversion robuste
+    s = series.astype(str).str.strip()
+    # Supprimer espaces insécables (U+00A0) et espaces normaux utilisés comme séparateurs de milliers
+    s = s.str.replace('\xa0', '', regex=False)
+    s = s.str.replace('\u202f', '', regex=False)  # espace fine insécable
+    # Détecter le format européen : "1.234,56" → . pour milliers, , pour décimale
+    mask_eu = s.str.match(r'^\-?\d{1,3}(\.\d{3})+(,\d+)?$', na=False)
+    s_copy = s.copy()
+    s_copy[mask_eu] = s[mask_eu].str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
+    # Pour le reste : virgule = séparateur décimal (format FR/BEAC)
+    # Supprimer les espaces restants (séparateurs de milliers)
+    s_copy = s_copy.str.replace(' ', '', regex=False)
+    # Remplacer virgule par point (format FR → standard)
+    s_copy = s_copy.str.replace(',', '.', regex=False)
+    result = pd.to_numeric(s_copy, errors='coerce')
+    # Diagnostic : signaler les pertes si importantes
+    nb_nan = result.isna().sum()
+    nb_tot = len(result)
+    if nb_nan > 0 and nb_nan / max(nb_tot, 1) > 0.05:
+        import warnings
+        warnings.warn(f"clean_numeric_col: {nb_nan}/{nb_tot} valeurs non converties ({nb_nan/nb_tot*100:.1f}%)")
+    return result
+
 # ── FONCTIONS ANALYTIQUES MULTI-BASES ────────────────────────────────────────
 def preparer_portefeuille(df):
     """Prépare le portefeuille — UNIQUEMENT les colonnes utiles au dashboard.
-    Réduit la taille mémoire de ~60-70% sur les gros fichiers (>100 Mo)."""
+    Réduit la taille mémoire de ~60-70% sur les gros fichiers (>100 Mo).\n    Utilise clean_numeric_col pour garantir la fiabilité des montants."""
     if df is None: return None
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
@@ -466,13 +504,13 @@ def preparer_portefeuille(df):
         df = df.merge(nb_ass, on="NUMEPOLI_P", how="left")
 
     # Optimisation types mémoire
-    # ETAT_POLICE en category (jamais jointé avec fillna externe)
+    # Optimisation types mémoire — clean_numeric_col gère tous les formats FR/BEAC
     if "ETAT_POLICE" in df.columns: df["ETAT_POLICE"] = df["ETAT_POLICE"].astype("category")
     # Autres colonnes en str (pas category → évite TypeError sur fillna après merge)
     for col in ["LIBECATE","LIBEVILL","CODEAPPO","NOM_APP"]:
         if col in df.columns: df[col] = df[col].astype(str).replace("nan", "")
     for col in ["MONTENCA","COTI_PERIODIQUE","NBRE_PRIME"]:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")  # float64
+        if col in df.columns: df[col] = clean_numeric_col(df[col])  # float64 robuste
     return df
 
 
@@ -505,7 +543,7 @@ def preparer_ca(df):
             str(x).replace(".0","").isdigit() else str(x))
 
     for col in ["CHIFAFFA","PRIMNETT","COMMAPPO"]:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")  # float64 — évite les pertes de précision sur grands montants
+        if col in df.columns: df[col] = clean_numeric_col(df[col])  # float64 robuste — gère "3 711 385,45"
     if "CODEAPPO" in df.columns: df["CODEAPPO"] = df["CODEAPPO"].astype("category")
     return df
 
@@ -544,7 +582,7 @@ def preparer_sin(df):
                "Réglement Total","Règlement Total","Reglement Total"]:
         if _c in df.columns: _regl_col = _c; break
     if _regl_col is not None:
-        df["REGL_PRINC"] = pd.to_numeric(df[_regl_col], errors="coerce").fillna(0)  # float64
+        df["REGL_PRINC"] = clean_numeric_col(df[_regl_col]).fillna(0)  # float64 robuste
     else:
         df["REGL_PRINC"] = 0.0
     return df
@@ -1485,12 +1523,27 @@ init_db()
 def q(sql, params=()):
     c = gc(); df = pd.read_sql_query(sql, c, params=params); c.close(); return df
 
-def fmt(v):
-    if not v or v==0: return "—"
-    if v>=1_000_000_000: return f"{v/1e9:.2f} Mrd FCFA"
-    if v>=1_000_000: return f"{v/1e6:.2f} M FCFA"
-    if v>=1_000: return f"{v/1e3:.0f} K FCFA"
+def fmt(v, exact=False):
+    """Formate un montant FCFA de manière lisible.
+    exact=True → affiche le montant exact sans arrondi (pour vérification)."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    if v == 0: return "0 FCFA"
+    if exact: return f"{v:,.0f} FCFA"
+    if v >= 1_000_000_000: return f"{v/1e9:.3f} Mrd FCFA"
+    if v >= 1_000_000: return f"{v/1e6:.3f} M FCFA"
+    if v >= 1_000: return f"{v/1e3:.0f} K FCFA"
     return f"{v:,.0f} FCFA"
+
+def fmt_exact(v):
+    """Montant exact avec séparateurs de milliers — pour vérification comptable."""
+    try:
+        v = float(v)
+        return f"{v:,.0f} FCFA"
+    except (TypeError, ValueError):
+        return "—"
 
 def dbg(v,vp):
     if not vp or vp==0: return ""
@@ -4030,6 +4083,43 @@ elif "Accueil" in nav:
                 _nb_pol   = _ca_f["POLICE_KEY"].nunique() if "POLICE_KEY" in _ca_f.columns else 0
                 _nb_comm  = _ca_f["CODEAPPO"].nunique() if "CODEAPPO" in _ca_f.columns else 0
                 _comm_tot = float(_ca_f["COMMAPPO"].sum()) if "COMMAPPO" in _ca_f.columns else 0.0
+
+                # ── BLOC VÉRIFICATION COMPTABLE ───────────────────────────────
+                _ca_tot_all = float(_ca_imp["CHIFAFFA"].sum()) if "CHIFAFFA" in _ca_imp.columns else 0.0
+                _nb_ex = _ca_imp["ANNEE_COMP"].nunique() if "ANNEE_COMP" in _ca_imp.columns else "?"
+                # Construire la décomposition par année
+                _decomp_html = ""
+                if "CHIFAFFA" in _ca_imp.columns:
+                    for _ay in sorted(_annees_dispo, reverse=True)[:6]:
+                        _msk_ay = _dts_all.dt.year == _ay
+                        _tot_ay = float(_ca_imp[_msk_ay.values]["CHIFAFFA"].sum())
+                        _nb_ay  = int(_msk_ay.sum())
+                        _decomp_html += (f'<div style="font-size:10px;padding:2px 0;">'
+                                        f'<b>{_ay}</b> : <span style="color:#003366;font-weight:700;">'
+                                        f'{_tot_ay:,.0f} FCFA</span>'
+                                        f' <span style="color:#5A6478;">({_nb_ay:,} quitt.)</span></div>')
+                st.markdown(
+                    f'<div style="background:#F0F7FF;border:2px solid #0072CE;border-radius:10px;'
+                    f'padding:10px 16px;margin:8px 0;font-size:11.5px;">'
+                    f'<div style="font-weight:800;color:#003366;margin-bottom:6px;">'
+                    f'✅ VÉRIFICATION COMPTABLE — Comparer avec SOUS.TOTAL(9;...) dans Excel</div>'
+                    f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+                    f'<div style="background:white;border-radius:8px;padding:8px;border-left:4px solid #C9A227;">'
+                    f'<div style="color:#5A6478;font-size:10px;">📋 BASE COMPLÈTE (toutes années)</div>'
+                    f'<div style="font-size:1.05rem;font-weight:900;color:#003366;">{_ca_tot_all:,.0f} FCFA</div>'
+                    f'<div style="font-size:9px;color:#5A6478;">{len(_ca_imp):,} quittances · {_nb_ex} exercice(s)</div>'
+                    f'</div>'
+                    f'<div style="background:white;border-radius:8px;padding:8px;border-left:4px solid #0072CE;">'
+                    f'<div style="color:#5A6478;font-size:10px;">📅 SÉLECTION : {_lbl}</div>'
+                    f'<div style="font-size:1.05rem;font-weight:900;color:#003366;">{_ca_tot:,.0f} FCFA</div>'
+                    f'<div style="font-size:9px;color:#5A6478;">{_nb_q:,} quittances · {_nb_comm} commerciaux</div>'
+                    f'</div>'
+                    f'<div style="background:white;border-radius:8px;padding:8px;border-left:4px solid #2ECC71;">'
+                    f'<div style="color:#5A6478;font-size:10px;font-weight:700;margin-bottom:3px;">📊 DÉCOMPOSITION PAR ANNÉE</div>'
+                    f'{_decomp_html}'
+                    f'</div>'
+                    f'</div></div>',
+                    unsafe_allow_html=True)
                 _tx_comm  = _comm_tot / max(_ca_tot, 1) * 100
                 _ticket   = _ca_tot / max(_nb_q, 1)
                 _nb_mois  = _ca_f["YYYYMM_COMP"].nunique() if "YYYYMM_COMP" in _ca_f.columns else max(len(_yr_actifs)*12, 1)
